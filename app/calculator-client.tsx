@@ -20,7 +20,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
   const [start,setStart] = useState("2026-10-01");
   const [end,setEnd] = useState("2029-06-30");
   const [open,setOpen] = useState<string|null>(null);
-  const [single,setSingle] = useState(30000);
+  const [single,setSingle] = useState(35000);
   const [singleRate,setSingleRate] = useState(35);
   const [singleIncrease,setSingleIncrease] = useState("2027-02-01");
   const [plans,setPlans] = useState<SavedPlan[]>([]);
@@ -63,7 +63,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
     setOpen(id);
   }
   function reset() {
-    setItems(initialItems);setStart("2026-10-01");setEnd("2029-06-30");setSingle(30000);
+    setItems(initialItems);setStart("2026-10-01");setEnd("2029-06-30");setSingle(35000);
     setSingleRate(35);setSingleIncrease("2027-02-01");setOpen(null);
   }
   function load(plan:SavedPlan) {
