@@ -85,3 +85,20 @@ export async function PUT(request: Request) {
     return failed();
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const ctx = await context();
+    if (!ctx) return unauthorized();
+    let parsed: unknown;
+    try { parsed = await request.json(); } catch { return Response.json({ error: "Geçersiz hesaplama." }, { status: 400 }); }
+    const id = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>).id : null;
+    if (typeof id !== "string" || !/^[0-9a-f-]{36}$/.test(id)) return Response.json({ error: "Geçersiz hesaplama." }, { status: 400 });
+    const deleted = await ctx.prisma.savedPlan.deleteMany({ where: { id, ownerId: ctx.ownerId } });
+    if (!deleted.count) return Response.json({ error: "Kayıt bulunamadı." }, { status: 404 });
+    return Response.json({ deleted: true });
+  } catch (error) {
+    console.error("Plan silinemedi", error);
+    return failed();
+  }
+}

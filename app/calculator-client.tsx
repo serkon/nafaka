@@ -11,11 +11,20 @@ const sum = (rows: {amount:number}[]) => rows.reduce((n, row) => n + row.amount,
 const dateLabel = (iso:string) => new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(iso+"T12:00:00Z"));
 type PlanData = { items: CostItem[]; start: string; end: string; single: number; singleRate: number; singleIncrease: string };
 type SavedPlan = { id: string; name: string; data: PlanData; createdAt: string; updatedAt: string };
+function currentPlan(plan:SavedPlan):SavedPlan {
+  const name=plan.name.endsWith(" · Lise bitimine kadar")?"Lise bitimine kadar":plan.name;
+  const items=plan.data.items.flatMap(item=>{
+    if (item.id!=="school-transport") return [item];
+    const school=Math.round(item.amount*109641.4/196460.4*100)/100;
+    return [{...item,id:"school",name:"Okul ücreti",amount:school},{...item,id:"transport",name:"Servis",amount:Math.round((item.amount-school)*100)/100}];
+  });
+  return {...plan,name,data:{...plan.data,items}};
+}
 function Field({label,hint,children}:{label:string;hint?:string;children:ReactNode}) {
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
-export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:string}) {
+export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;userName:string|null;signInPath:string}) {
   const [items,setItems] = useState<CostItem[]>(initialItems);
   const [start,setStart] = useState("2026-10-01");
   const [end,setEnd] = useState("2029-06-30");
@@ -25,7 +34,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
   const [singleIncrease,setSingleIncrease] = useState("2027-02-01");
   const [plans,setPlans] = useState<SavedPlan[]>([]);
   const [activeId,setActiveId] = useState<string|null>(null);
-  const [planName,setPlanName] = useState("Sarp · Lise bitimine kadar");
+  const [planName,setPlanName] = useState("Lise bitimine kadar");
   const [baseline,setBaseline] = useState("");
   const [saveAs,setSaveAs] = useState(false);
   const [copyName,setCopyName] = useState("");
@@ -39,7 +48,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
     fetch("/api/plans",{cache:"no-store"}).then(async response=>{
       const body=await response.json() as {error?:string;plans:SavedPlan[]};
       if (!response.ok) throw new Error(body.error || "Kayıtlar yüklenemedi.");
-      setPlans(body.plans);
+      setPlans(body.plans.map(currentPlan));
     }).catch(error=>setNotice(error.message)).finally(()=>setListLoading(false));
   },[signedIn]);
   const payments = useMemo(()=>calculate(items,start,end),[items,start,end]);
@@ -95,8 +104,22 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
     } catch(error) {setNotice(error instanceof Error?error.message:"Kaydetme başarısız. Tekrar deneyin.");}
     finally {setBusy(false);}
   }
-  return <main className="app-shell">
-    <header className="topbar"><div className="mark">∑</div><div className="identity"><strong>Gider Planı</strong><span>Çocuk giderleri ve nafaka hesaplayıcı</span></div><span className="privacy">Hesaplama bu ekranda yapılır</span></header>
+  async function removePlan(plan:SavedPlan) {
+    if (!window.confirm(`“${plan.name}” kayıtlı hesaplaması silinsin mi? Bu işlem geri alınamaz.`)) return;
+    setBusy(true);setNotice("");
+    try {
+      const response=await fetch("/api/plans",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:plan.id})});
+      const result=await response.json() as {error?:string};
+      if (!response.ok) throw new Error(result.error||"Hesaplama silinemedi.");
+      setPlans(old=>old.filter(p=>p.id!==plan.id));
+      if (activeId===plan.id) {setActiveId(null);setBaseline("");setSaveAs(false);}
+      setNotice(`“${plan.name}” silindi.`);
+    } catch(error) {setNotice(error instanceof Error?error.message:"Hesaplama silinemedi. Tekrar deneyin.");}
+    finally {setBusy(false);}
+  }
+  return <>
+    <header className="topbar"><div className="topbar-inner"><div className="mark">∑</div><div className="identity"><strong>Gider Planı</strong><span>Çocuk giderleri ve nafaka hesaplayıcı</span></div><span className="header-user" title={userName||undefined}>{userName||"Hesaplama bu ekranda yapılır"}</span></div></header>
+    <main className="app-shell">
     <div className="workspace">
       <section className="editor">
         <div className="intro"><p className="eyebrow">HESAPLAMA ALANI</p><h1>Ödemelerini planla</h1><p>Örnek plan Ekim 2026–Haziran 2029 dönemini kapsar. Kurs üç eğitim yılında sekizer ay sürer; tutarları ve ödeme tarihlerini değiştirebilirsin.</p></div>
@@ -105,7 +128,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
           {signedIn?<>
             <div className="save-bar"><Field label="Hesaplama adı"><Input maxLength={80} value={planName} onChange={e=>setPlanName(e.target.value)} /></Field><Button type="button" disabled={busy} onClick={()=>persist(false)}><Save size={16}/>{activeId?"Kaydet":"Kaydet"}</Button><Button type="button" variant="outline" disabled={busy} onClick={()=>{setCopyName(`${planName} · Kopya`);setSaveAs(true);}}>Farklı kaydet</Button></div>
             {saveAs&&<div className="save-as"><Field label="Yeni kopyanın adı"><Input maxLength={80} value={copyName} onChange={e=>setCopyName(e.target.value)}/></Field><Button disabled={busy} type="button" onClick={()=>persist(true)}>Yeni kayıt oluştur</Button><Button type="button" variant="ghost" onClick={()=>setSaveAs(false)}>Vazgeç</Button></div>}
-            <div className="saved-list"><strong>Kayıtlı hesaplamalar {plans.length?`(${plans.length})`:""}</strong>{listLoading?<p>Yükleniyor…</p>:plans.length?<div className="saved-scroll">{plans.map(plan=><button type="button" className={`saved-item ${plan.id===activeId?"selected":""}`} key={plan.id} onClick={()=>load(plan)}><span><b>{plan.name}</b><small>{new Date(plan.updatedAt).toLocaleDateString("tr-TR")} · {money(sum(calculate(plan.data.items,plan.data.start,plan.data.end)))}</small></span><span>{plan.id===activeId?(dirty?"Değiştirildi":"Açık"):"Aç"}</span></button>)}</div>:<p>Henüz kayıtlı hesaplama yok.</p>}</div>
+            <div className="saved-list"><strong>Kayıtlı hesaplamalar {plans.length?`(${plans.length})`:""}</strong>{listLoading?<p>Yükleniyor…</p>:plans.length?<div className="saved-scroll">{plans.map(plan=><div className={`saved-item ${plan.id===activeId?"selected":""}`} key={plan.id}><span className="saved-description"><b>{plan.name}</b><small>{new Date(plan.updatedAt).toLocaleDateString("tr-TR")} · {money(sum(calculate(plan.data.items,plan.data.start,plan.data.end)))}</small></span><span className="saved-actions"><Button type="button" variant="ghost" disabled={busy} onClick={()=>load(plan)}>Düzenle</Button><Button type="button" variant="ghost" disabled={busy} onClick={()=>removePlan(plan)} aria-label={`${plan.name} hesabını sil`}><Trash2 size={15}/> Sil</Button></span></div>)}</div>:<p>Henüz kayıtlı hesaplama yok.</p>}</div>
           </>:<div className="sign-in-prompt"><p>Hesaplamalarını farklı oturumlarda görmek için ChatGPT hesabınla giriş yap. Giriş yapmadan hesaplama yapabilirsin.</p><a href={signInPath} target="_top">Giriş yap ve kaydet</a></div>}
           {notice&&<p className="save-notice" role="status">{notice}</p>}
         </section>
@@ -135,7 +158,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
         <Button type="button" variant="ghost" className="reset" onClick={reset}><RotateCcw size={15}/> Örnek değerlere dön</Button>
       </section>
       <aside className="results"><div className="results-sticky"><p className="eyebrow">ANLIK SONUÇ</p><h2>Toplam karşılaştırma</h2><p>Seçtiğin tarihler arasındaki kalan ödemeler</p>
-        <div className="total-card"><span>Kalem kalem toplam</span><strong>{money(total)}</strong><small>{payments.length} ödeme · {items.length} kalem</small></div>
+        <div className="total-card"><span>Kalem kalem toplam</span><strong>{money(total)}</strong><small>{monthly.length} ay · {payments.length} ödeme hareketi · {items.length} gider kalemi</small></div>
         <div className="single-card"><div className="single-head"><span>Tek aylık ödeme</span><strong>{money(singleTotal)}</strong></div><div className="single-fields">
           <Field label="Başlangıç tutarı (TL)"><Input type="number" min="0" value={single} onChange={e=>setSingle(Number(e.target.value))}/></Field>
           <Field label="Yıllık artış (%)"><Input type="number" min="-100" value={singleRate} onChange={e=>setSingleRate(Number(e.target.value))}/></Field>
@@ -148,5 +171,6 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
     <section className="breakdown"><p className="eyebrow">ÖDEME DÖKÜMÜ</p><h2>Nereye ne kadar gidiyor?</h2><p>Tarihe ve kaleme göre hesaplanan tutarlar.</p><div className="breakdown-grid">
       <div className="data-panel"><h3>Kalem bazında</h3>{itemRows.map(({item,rows})=><div className="data-row" key={item.id}><span>{item.name}<small>{rows.length} ödeme</small></span><strong>{money(sum(rows))}</strong></div>)}<div className="data-row grand"><span>Toplam</span><strong>{money(total)}</strong></div></div>
     </div><div className="data-panel matrix-panel"><h3>Ay ay ödeme planı</h3><p>Her sütun senin payını gösterir; ödenmiş okul ve servis tutarı yeniden eklenmez.</p><div className="month-scroll matrix-scroll"><table><thead><tr><th>Ay</th>{items.map(item=><th key={item.id}>{item.name}</th>)}<th>Aylık toplam</th><th>Tek ödeme</th></tr></thead><tbody>{monthly.map(([month,v])=><tr key={month}><td>{dateLabel(month+"-01")}</td>{items.map(item=><td key={item.id}>{v.items[item.id]?money(v.items[item.id]):"—"}</td>)}<td className="row-total">{money(v.detail)}</td><td>{money(v.single)}</td></tr>)}</tbody><tfoot><tr><th>GENEL TOPLAM</th>{items.map(item=><th key={item.id}>{money(sum(payments.filter(p=>p.itemId===item.id)))}</th>)}<th>{money(total)}</th><th>{money(singleTotal)}</th></tr></tfoot></table></div></div></section>
-  </main>;
+    </main>
+  </>;
 }
