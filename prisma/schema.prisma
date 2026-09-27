@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+  runtime  = "cloudflare"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Existing D1 table. Drizzle SQL migrations remain the single schema migration source.
+model SavedPlan {
+  id        String @id
+  ownerId   String @map("owner_id")
+  name      String
+  data      String
+  createdAt String @map("created_at")
+  updatedAt String @map("updated_at")
+
+  @@index([ownerId, updatedAt], map: "idx_saved_plans_owner_updated")
+  @@map("saved_plans")
+}
