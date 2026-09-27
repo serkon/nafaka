@@ -95,4 +95,5 @@ export const initialItems: CostItem[] = [
   { id: "uniform", name: "Okul kıyafeti", amount: 13000, share: 50, frequency: "dates", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-09-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", dueDates: ["2026-11-01", "2027-09-01", "2028-09-01"] },
   { id: "health", name: "Sağlık sigortası", amount: 12000, share: 50, frequency: "yearly", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-11-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01" },
   { id: "course", name: "Kurs / dershane", amount: 20000, share: 100, frequency: "monthly", monthsPerYear: 8, firstDue: "2026-10-01", lastDue: "2029-05-31", paidThrough: "", annualRate: 35, firstIncrease: "2027-10-01" },
+  { id: "allowance", name: "Harçlık", amount: 5000, share: 100, frequency: "monthly", monthsPerYear: 12, firstDue: "2026-10-01", lastDue: "2029-06-30", paidThrough: "", annualRate: 0, firstIncrease: "" },
 ];
