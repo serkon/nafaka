@@ -12,7 +12,6 @@ export type CostItem = {
   paidThrough: string;
   annualRate: number;
   firstIncrease: string;
-  maxIncreases: number;
   dueDates?: string[];
 };
 
@@ -35,10 +34,10 @@ function addMonths(iso: string, months: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function increasesAt(due: string, first: string, maximum: number): number {
-  if (!first || due < first || maximum <= 0) return 0;
+function increasesAt(due: string, first: string): number {
+  if (!first || due < first) return 0;
   let count = 0;
-  for (let n = 0; n < Math.min(100, maximum); n++) {
+  for (let n = 0; n < 100; n++) {
     if (addMonths(first, n * 12) <= due) count++;
     else break;
   }
@@ -53,8 +52,10 @@ export function calculate(items: CostItem[], start: string, end: string): Paymen
     const effectiveEnd = item.lastDue && item.lastDue < end ? item.lastDue : end;
     const addPayment = (date: string) => {
       if (date < start || date > effectiveEnd || (item.paidThrough && date <= item.paidThrough)) return;
-      const factor = Math.pow(1 + Math.max(-100, item.annualRate) / 100, increasesAt(date, item.firstIncrease, item.maxIncreases));
-      const amount = item.amount * Math.max(0, Math.min(100, item.share)) / 100 * factor;
+      const firstIncrease = item.firstIncrease || addMonths(item.firstDue, 12);
+      const factor = Math.pow(1 + Math.max(-100, item.annualRate) / 100, increasesAt(date, firstIncrease));
+      const raw = item.amount * Math.max(0, Math.min(100, item.share)) / 100 * factor;
+      const amount = Math.round((raw + Number.EPSILON) * 100) / 100;
       if (Number.isFinite(amount) && amount > 0) payments.push({ itemId: item.id, name: item.name || "İsimsiz kalem", date, amount });
     };
 
@@ -85,11 +86,11 @@ export function money(value: number): string {
 }
 
 export const initialItems: CostItem[] = [
-  { id: "nafaka", name: "İştirak nafakası", amount: 15000, share: 100, frequency: "monthly", monthsPerYear: 12, firstDue: "2026-10-01", lastDue: "2029-02-28", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", maxIncreases: 2 },
-  { id: "adult-support", name: "18 sonrası destek (varsayım)", amount: 27337.5, share: 100, frequency: "monthly", monthsPerYear: 12, firstDue: "2029-03-01", lastDue: "2029-06-30", paidThrough: "", annualRate: 0, firstIncrease: "", maxIncreases: 0 },
-  { id: "school-transport", name: "Okul + servis", amount: 196460.4, share: 50, frequency: "yearly", monthsPerYear: 12, firstDue: "2026-02-01", lastDue: "2028-02-28", paidThrough: "2026-02-01", annualRate: 35, firstIncrease: "2027-02-01", maxIncreases: 2 },
-  { id: "books", name: "Okul kitapları", amount: 11881.66, share: 50, frequency: "dates", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-09-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", maxIncreases: 2, dueDates: ["2026-11-01", "2027-09-01", "2028-09-01"] },
-  { id: "uniform", name: "Okul kıyafeti", amount: 13000, share: 50, frequency: "dates", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-09-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", maxIncreases: 2, dueDates: ["2026-11-01", "2027-09-01", "2028-09-01"] },
-  { id: "health", name: "Sağlık sigortası", amount: 12000, share: 50, frequency: "yearly", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-11-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", maxIncreases: 2 },
-  { id: "course", name: "Kurs / dershane", amount: 20000, share: 100, frequency: "monthly", monthsPerYear: 8, firstDue: "2026-10-01", lastDue: "2029-05-31", paidThrough: "", annualRate: 35, firstIncrease: "2027-10-01", maxIncreases: 2 },
+  { id: "nafaka", name: "İştirak nafakası", amount: 15000, share: 100, frequency: "monthly", monthsPerYear: 12, firstDue: "2026-10-01", lastDue: "2029-02-28", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01" },
+  { id: "adult-support", name: "18 sonrası destek (varsayım)", amount: 36905.63, share: 100, frequency: "monthly", monthsPerYear: 12, firstDue: "2029-03-01", lastDue: "2029-06-30", paidThrough: "", annualRate: 0, firstIncrease: "" },
+  { id: "school-transport", name: "Okul + servis", amount: 196460.4, share: 50, frequency: "yearly", monthsPerYear: 12, firstDue: "2026-02-01", lastDue: "2028-02-28", paidThrough: "2026-02-01", annualRate: 35, firstIncrease: "2027-02-01" },
+  { id: "books", name: "Okul kitapları", amount: 11881.66, share: 50, frequency: "dates", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-09-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", dueDates: ["2026-11-01", "2027-09-01", "2028-09-01"] },
+  { id: "uniform", name: "Okul kıyafeti", amount: 13000, share: 50, frequency: "dates", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-09-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01", dueDates: ["2026-11-01", "2027-09-01", "2028-09-01"] },
+  { id: "health", name: "Sağlık sigortası", amount: 12000, share: 50, frequency: "yearly", monthsPerYear: 12, firstDue: "2026-11-01", lastDue: "2028-11-30", paidThrough: "", annualRate: 35, firstIncrease: "2027-02-01" },
+  { id: "course", name: "Kurs / dershane", amount: 20000, share: 100, frequency: "monthly", monthsPerYear: 8, firstDue: "2026-10-01", lastDue: "2029-05-31", paidThrough: "", annualRate: 35, firstIncrease: "2027-10-01" },
 ];

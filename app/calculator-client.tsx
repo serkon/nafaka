@@ -9,7 +9,7 @@ import { calculate, initialItems, money, type CostItem, type Frequency } from "@
 
 const sum = (rows: {amount:number}[]) => rows.reduce((n, row) => n + row.amount, 0);
 const dateLabel = (iso:string) => new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(iso+"T12:00:00Z"));
-type PlanData = { items: CostItem[]; start: string; end: string; single: number; singleRate: number; singleIncrease: string; singleMax: number };
+type PlanData = { items: CostItem[]; start: string; end: string; single: number; singleRate: number; singleIncrease: string };
 type SavedPlan = { id: string; name: string; data: PlanData; createdAt: string; updatedAt: string };
 function Field({label,hint,children}:{label:string;hint?:string;children:ReactNode}) {
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
@@ -23,7 +23,6 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
   const [single,setSingle] = useState(30000);
   const [singleRate,setSingleRate] = useState(35);
   const [singleIncrease,setSingleIncrease] = useState("2027-02-01");
-  const [singleMax,setSingleMax] = useState(2);
   const [plans,setPlans] = useState<SavedPlan[]>([]);
   const [activeId,setActiveId] = useState<string|null>(null);
   const [planName,setPlanName] = useState("Sarp · Lise bitimine kadar");
@@ -33,7 +32,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
   const [busy,setBusy] = useState(false);
   const [notice,setNotice] = useState("");
   const [listLoading,setListLoading] = useState(signedIn);
-  const data:PlanData={items,start,end,single,singleRate,singleIncrease,singleMax};
+  const data:PlanData={items,start,end,single,singleRate,singleIncrease};
   const dirty=Boolean(activeId && baseline && JSON.stringify(data)!==baseline);
   useEffect(()=>{
     if (!signedIn) return;
@@ -46,8 +45,8 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
   const payments = useMemo(()=>calculate(items,start,end),[items,start,end]);
   const singlePayments = useMemo(()=>calculate([{
     id:"single",name:"Tek aylık ödeme",amount:single,share:100,frequency:"monthly",monthsPerYear:12,
-    firstDue:start,lastDue:"",paidThrough:"",annualRate:singleRate,firstIncrease:singleIncrease,maxIncreases:singleMax
-  }],start,end),[single,singleRate,singleIncrease,singleMax,start,end]);
+    firstDue:start,lastDue:"",paidThrough:"",annualRate:singleRate,firstIncrease:singleIncrease
+  }],start,end),[single,singleRate,singleIncrease,start,end]);
   const total=sum(payments), singleTotal=sum(singlePayments), difference=singleTotal-total;
   const itemRows=useMemo(()=>items.map(item=>({item,rows:payments.filter(p=>p.itemId===item.id)})),[items,payments]);
   const monthly=useMemo(()=>{
@@ -60,18 +59,18 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
   const update=(id:string,changes:Partial<CostItem>)=>setItems(old=>old.map(i=>i.id===id?{...i,...changes}:i));
   function add() {
     const id="item-"+Date.now();
-    setItems(old=>[...old,{id,name:"Yeni gider",amount:0,share:50,frequency:"yearly",monthsPerYear:12,firstDue:start,lastDue:"",paidThrough:"",annualRate:35,firstIncrease:"2027-02-01",maxIncreases:2}]);
+    setItems(old=>[...old,{id,name:"Yeni gider",amount:0,share:50,frequency:"yearly",monthsPerYear:12,firstDue:start,lastDue:"",paidThrough:"",annualRate:35,firstIncrease:""}]);
     setOpen(id);
   }
   function reset() {
     setItems(initialItems);setStart("2026-10-01");setEnd("2029-06-30");setSingle(30000);
-    setSingleRate(35);setSingleIncrease("2027-02-01");setSingleMax(2);setOpen(null);
+    setSingleRate(35);setSingleIncrease("2027-02-01");setOpen(null);
   }
   function load(plan:SavedPlan) {
     if (dirty && !window.confirm("Kaydedilmemiş değişiklikler silinsin mi?")) return;
     setItems(plan.data.items);setStart(plan.data.start);setEnd(plan.data.end);
     setSingle(plan.data.single);setSingleRate(plan.data.singleRate);
-    setSingleIncrease(plan.data.singleIncrease);setSingleMax(plan.data.singleMax);
+    setSingleIncrease(plan.data.singleIncrease);
     setActiveId(plan.id);setPlanName(plan.name);setBaseline(JSON.stringify(plan.data));
     setOpen(null);setSaveAs(false);setNotice(`“${plan.name}” açıldı.`);
   }
@@ -130,8 +129,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
             <Field label="Son ödeme tarihi (isteğe bağlı)"><Input type="date" value={item.lastDue} onChange={e=>update(item.id,{lastDue:e.target.value})}/></Field>
             <Field label="Ödenmiş son tarih" hint="Bu tarihe kadarki ödemeler hesaptan düşülür."><Input type="date" value={item.paidThrough} onChange={e=>update(item.id,{paidThrough:e.target.value})}/></Field>
             <Field label="Yıllık artış (%)"><Input type="number" min="-100" step="0.01" value={item.annualRate} onChange={e=>update(item.id,{annualRate:Number(e.target.value)})}/></Field>
-            <Field label="İlk artış tarihi"><Input type="date" value={item.firstIncrease} onChange={e=>update(item.id,{firstIncrease:e.target.value})}/></Field>
-            <Field label="En fazla artış sayısı"><Input type="number" min="0" max="100" value={item.maxIncreases} onChange={e=>update(item.id,{maxIncreases:Number(e.target.value)})}/></Field>
+            <Field label="İlk artış tarihi" hint="Boş bırakılırsa ilk ödemeden 12 ay sonra başlar; son ödeme tarihine kadar her yıl tekrarlanır."><Input type="date" value={item.firstIncrease} onChange={e=>update(item.id,{firstIncrease:e.target.value})}/></Field>
           </div><div className="item-footer"><span>Ödenmiş tutarlar kalan toplama girmez.</span><Button type="button" variant="ghost" onClick={()=>{setItems(old=>old.filter(i=>i.id!==item.id));setOpen(null);}}><Trash2 size={15}/> Kalemi sil</Button></div></div>}
         </article>)}</div>
         <Button type="button" variant="ghost" className="reset" onClick={reset}><RotateCcw size={15}/> Örnek değerlere dön</Button>
@@ -141,8 +139,7 @@ export default function Home({signedIn,signInPath}:{signedIn:boolean;signInPath:
         <div className="single-card"><div className="single-head"><span>Tek aylık ödeme</span><strong>{money(singleTotal)}</strong></div><div className="single-fields">
           <Field label="Başlangıç tutarı (TL)"><Input type="number" min="0" value={single} onChange={e=>setSingle(Number(e.target.value))}/></Field>
           <Field label="Yıllık artış (%)"><Input type="number" min="-100" value={singleRate} onChange={e=>setSingleRate(Number(e.target.value))}/></Field>
-          <Field label="İlk artış"><Input type="date" value={singleIncrease} onChange={e=>setSingleIncrease(e.target.value)}/></Field>
-          <Field label="En fazla artış"><Input type="number" min="0" max="100" value={singleMax} onChange={e=>setSingleMax(Number(e.target.value))}/></Field>
+          <Field label="İlk artış" hint="Boşsa başlangıçtan 12 ay sonra."><Input type="date" value={singleIncrease} onChange={e=>setSingleIncrease(e.target.value)}/></Field>
         </div></div>
         <div className={"difference "+(difference>0?"higher":difference<0?"lower":"")}><span>{difference>0?"Tek ödeme daha yüksek":difference<0?"Tek ödeme daha düşük":"İki toplam eşit"}</span><strong>{money(Math.abs(difference))}</strong></div>
         <p className="note">Tek aylık ödeme diğer kalemlerin yerine geçtiği varsayımıyla karşılaştırılır. 18 yaş sonrası destek yalnızca bütçe varsayımıdır; hukuki bir ödeme kararı değildir. Kuruşlar toplamda yuvarlanır.</p>
