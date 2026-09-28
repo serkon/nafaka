@@ -40,7 +40,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
   const [open,setOpen] = useState<string|null>(null);
   const [single,setSingle] = useState(35000);
   const [singleRate,setSingleRate] = useState<number|undefined>(undefined);
-  const [singleIncrease,setSingleIncrease] = useState("2027-02-01");
+  const [singleIncrease,setSingleIncrease] = useState("2027-10-01");
   const [plans,setPlans] = useState<SavedPlan[]>([]);
   const [activeId,setActiveId] = useState<string|null>(null);
   const [planName,setPlanName] = useState("Lise bitimine kadar");
@@ -98,7 +98,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
   }
   function reset() {
     setItems(initialItems);setStart("2026-10-01");setEnd("2029-06-30");setGeneralRate(35);setBirthday("03");setSingle(35000);
-    setSingleRate(undefined);setSingleIncrease("2027-02-01");setOpen(null);
+    setSingleRate(undefined);setSingleIncrease("2027-10-01");setOpen(null);
   }
   function load(plan:SavedPlan) {
     if (dirty && !window.confirm("Kaydedilmemiş değişiklikler silinsin mi?")) return;
