@@ -59,6 +59,20 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
   const total=sum(payments), singleTotal=sum(singlePayments), difference=singleTotal-total;
   const monthCount=/^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end) && start<=end
     ? (Number(end.slice(0,4))-Number(start.slice(0,4)))*12+Number(end.slice(5,7))-Number(start.slice(5,7))+1 : 0;
+  const years=useMemo(()=>{
+    if (!monthCount) return [];
+    const yearTotals=new Map<number,number>();
+    payments.forEach(payment=>{
+      const year=Number(payment.date.slice(0,4));
+      yearTotals.set(year,(yearTotals.get(year)??0)+payment.amount);
+    });
+    const firstYear=Number(start.slice(0,4)),lastYear=Number(end.slice(0,4));
+    return Array.from({length:lastYear-firstYear+1},(_,offset)=>{
+      const year=firstYear+offset;
+      const months=(year===lastYear?Number(end.slice(5,7)):12)-(year===firstYear?Number(start.slice(5,7)):1)+1;
+      return {year,months,total:yearTotals.get(year)??0};
+    });
+  },[payments,start,end,monthCount]);
   const itemRows=useMemo(()=>items.map(item=>({item,rows:payments.filter(p=>p.itemId===item.id)})),[items,payments]);
   const monthly=useMemo(()=>{
     const map=new Map<string,{detail:number;single:number;items:Record<string,number>}>();
@@ -162,6 +176,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
       <aside className="results"><div className="results-sticky"><p className="eyebrow">ANLIK SONUÇ</p><h2>Toplam karşılaştırma</h2><p>Seçtiğin tarihler arasındaki kalan ödemeler</p>
         <div className="total-card"><span>Kalem kalem toplam</span><strong>{money(total)}</strong><small>{monthCount} ay · {payments.length} ödeme hareketi · {items.length} gider kalemi</small></div>
         <div className="average-card"><strong>Dönem ortalamaları</strong><div><span>Aylık ortalama</span><b>{money(monthCount?total/monthCount:0)}</b></div><div><span>Yıllık ortalama</span><b>{money(monthCount?total/monthCount*12:0)}</b></div><small>{monthCount} ayın toplamından hesaplanır. Yıllık değer 12 aya ölçeklenmiş ortalamadır.</small></div>
+        {years.length>0&&<div className="year-card"><strong>Takvim yılına göre</strong>{years.map(row=><div className="year-row" key={row.year}><span><b>{row.year}</b><small>{row.months} ay · aylık ort. {money(row.total/row.months)}</small></span><strong>{money(row.total)}</strong></div>)}<small>Her yılın seçilen tarihler arasındaki gerçek ödeme toplamı. Ödenmiş tutarlar dahil değildir.</small></div>}
         <div className="single-card"><div className="single-head"><span>Tek aylık ödeme</span><strong>{money(singleTotal)}</strong></div><div className="single-fields">
           <Field label="Başlangıç tutarı (TL)"><Input type="number" min="0" value={single} onChange={e=>setSingle(Number(e.target.value))}/></Field>
           <Field label="Yıllık artış (%)"><Input type="number" min="-100" value={singleRate} onChange={e=>setSingleRate(Number(e.target.value))}/></Field>
