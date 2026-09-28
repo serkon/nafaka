@@ -31,7 +31,7 @@ function Field({label,hint,children}:{label:string;hint?:string;children:ReactNo
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
-export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;userName:string|null;signInPath:string}) {
+export default function Home({signedIn,userName,signInPath,signOutPath}:{signedIn:boolean;userName:string|null;signInPath:string;signOutPath:string}) {
   const [items,setItems] = useState<CostItem[]>(initialItems);
   const [start,setStart] = useState("2026-10-01");
   const [end,setEnd] = useState("2029-06-30");
@@ -144,7 +144,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
     finally {setBusy(false);}
   }
   return <>
-    <header className="topbar"><div className="topbar-inner"><div className="mark">∑</div><div className="identity"><strong>Gider Planı</strong><span>Çocuk giderleri ve nafaka hesaplayıcı</span></div><span className="header-user" title={userName||undefined}>{userName||"Hesaplama bu ekranda yapılır"}</span></div></header>
+    <header className="topbar"><div className="topbar-inner"><div className="mark">∑</div><div className="identity"><strong>Gider Planı</strong><span>Çocuk giderleri ve nafaka hesaplayıcı</span></div><span className="header-user" title={userName||undefined}>{userName||"Hesaplama bu ekranda yapılır"}</span>{signedIn&&<a className="sign-out" href={signOutPath} target="_top">Çıkış yap</a>}</div></header>
     <main className="app-shell">
     <div className="workspace">
       <section className="editor">
