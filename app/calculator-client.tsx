@@ -9,11 +9,10 @@ import { calculate, initialItems, money, type CostItem, type Frequency } from "@
 
 const sum = (rows: {amount:number}[]) => rows.reduce((n, row) => n + row.amount, 0);
 const dateLabel = (iso:string) => new Intl.DateTimeFormat("tr-TR",{month:"long",year:"numeric"}).format(new Date(iso+"T12:00:00Z"));
-const validBirthday = (value:string) => {
-  if (!/^\d{2}-\d{2}$/.test(value)) return false;
-  const [day,month]=value.split("-").map(Number);
-  const date=new Date(Date.UTC(2000,month-1,day));
-  return date.getUTCDate()===day && date.getUTCMonth()===month-1;
+const monthOptions=Array.from({length:12},(_,index)=>({value:String(index+1).padStart(2,"0"),label:new Intl.DateTimeFormat("tr-TR",{month:"long"}).format(new Date(Date.UTC(2000,index,1)))}));
+const birthMonthOf=(value:string|undefined)=>{
+  const month=value?.match(/^(?:\d{2}-)?(\d{2})$/)?.[1];
+  return monthOptions.some(option=>option.value===month)?month!:"03";
 };
 type PlanData = { items: CostItem[]; start: string; end: string; generalRate: number; birthday: string; single: number; singleRate?: number; singleIncrease: string };
 type SavedPlan = { id: string; name: string; data: PlanData; createdAt: string; updatedAt: string };
@@ -26,7 +25,7 @@ function currentPlan(plan:SavedPlan):SavedPlan {
     const school=Math.round(item.amount*109641.4/196460.4*100)/100;
     return [{...normalized,id:"school",name:"Okul ücreti",amount:school},{...normalized,id:"transport",name:"Servis",amount:Math.round((item.amount-school)*100)/100}];
   });
-  return {...plan,name,data:{...plan.data,items,generalRate:plan.data.generalRate??35,birthday:plan.data.birthday??"",singleRate:plan.data.generalRate===undefined && plan.data.singleRate===35?undefined:plan.data.singleRate}};
+  return {...plan,name,data:{...plan.data,items,generalRate:plan.data.generalRate??35,birthday:birthMonthOf(plan.data.birthday),singleRate:plan.data.generalRate===undefined && plan.data.singleRate===35?undefined:plan.data.singleRate}};
 }
 function Field({label,hint,children}:{label:string;hint?:string;children:ReactNode}) {
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
@@ -37,7 +36,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
   const [start,setStart] = useState("2026-10-01");
   const [end,setEnd] = useState("2029-06-30");
   const [generalRate,setGeneralRate] = useState(35);
-  const [birthday,setBirthday] = useState("");
+  const [birthday,setBirthday] = useState("03");
   const [open,setOpen] = useState<string|null>(null);
   const [single,setSingle] = useState(35000);
   const [singleRate,setSingleRate] = useState<number|undefined>(undefined);
@@ -98,7 +97,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
     setOpen(id);
   }
   function reset() {
-    setItems(initialItems);setStart("2026-10-01");setEnd("2029-06-30");setGeneralRate(35);setBirthday("");setSingle(35000);
+    setItems(initialItems);setStart("2026-10-01");setEnd("2029-06-30");setGeneralRate(35);setBirthday("03");setSingle(35000);
     setSingleRate(undefined);setSingleIncrease("2027-02-01");setOpen(null);
   }
   function load(plan:SavedPlan) {
@@ -164,8 +163,8 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
           <Field label="Bitiş tarihi"><Input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></Field>
         </div><div className="two-fields plan-settings">
           <Field label="Genel yıllık artış (%)" hint="Özel oran girilmeyen tüm giderlerde ve tek ödeme karşılaştırmasında kullanılır."><Input type="number" min="-100" step="0.01" value={generalRate} onChange={e=>setGeneralRate(Number(e.target.value))}/></Field>
-          <Field label="Doğum günü (GG-AA)" hint="Harçlık artışı bu gün ve ayda başlar; ad veya doğum yılı gerekmez."><Input inputMode="numeric" maxLength={5} placeholder="Ör. 15-03" value={birthday} onChange={e=>setBirthday(e.target.value)}/></Field>
-        </div>{birthday && !validBirthday(birthday) && <p role="alert" className="error">Doğum gününü GG-AA biçiminde gir (ör. 15-03).</p>}{!birthday && <p className="settings-note">Doğum günü girilene kadar harçlığa artış uygulanmaz.</p>}{start>end && <p role="alert" className="error">Bitiş tarihi başlangıçtan önce olamaz.</p>}</section>
+          <Field label="Doğum ayı" hint="Harçlık artışı bu ayın ödemesinde başlar. Varsayılan Mart ayını değiştirebilirsin."><NativeSelect className="w-full" value={birthday} onChange={e=>setBirthday(e.target.value)}>{monthOptions.map(option=><NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}</NativeSelect></Field>
+        </div>{start>end && <p role="alert" className="error">Bitiş tarihi başlangıçtan önce olamaz.</p>}</section>
         <div className="list-head"><div><h2>Gider kalemleri <span className="count">{items.length}</span></h2><p>Her kalemin kendi tutarı ve ödeme takvimi var.</p></div><Button type="button" onClick={add}><Plus size={16}/> Kalem ekle</Button></div>
         <div className="item-list">{itemRows.map(({item,rows})=><article className={"item "+(open===item.id?"expanded":"")} key={item.id}>
           <button className="item-summary" type="button" aria-expanded={open===item.id} onClick={()=>setOpen(open===item.id?null:item.id)}>
@@ -182,7 +181,7 @@ export default function Home({signedIn,userName,signInPath}:{signedIn:boolean;us
             <Field label="Son ödeme tarihi (isteğe bağlı)"><Input type="date" value={item.lastDue} onChange={e=>update(item.id,{lastDue:e.target.value})}/></Field>
             <Field label="Ödenmiş son tarih" hint="Bu tarihe kadarki ödemeler hesaptan düşülür."><Input type="date" value={item.paidThrough} onChange={e=>update(item.id,{paidThrough:e.target.value})}/></Field>
             <Field label="Kaleme özel yıllık artış (%)" hint={`Boşsa genel oran (%${generalRate}) kullanılır; 0 girersen artış olmaz.`}><Input type="number" min="-100" step="0.01" placeholder={String(generalRate)} value={item.annualRate??""} onChange={e=>update(item.id,{annualRate:e.target.value===""?undefined:Number(e.target.value)})}/></Field>
-            <Field label="İlk artış tarihi" hint={item.increaseOnBirthday?"Boşsa artış doğum gününde başlar; gün ve ay yukarıdan girilir.":"Boşsa ilk ödemeden 12 ay sonra başlar; her yıl tekrarlanır."}><Input type="date" value={item.firstIncrease} onChange={e=>update(item.id,{firstIncrease:e.target.value})}/></Field>
+            <Field label="İlk artış tarihi" hint={item.increaseOnBirthday?"Boşsa artış doğum ayının ödemesinde başlar. Tarih girersen onu kullanır.":"Boşsa ilk ödemeden 12 ay sonra başlar; her yıl tekrarlanır."}><Input type="date" value={item.firstIncrease} onChange={e=>update(item.id,{firstIncrease:e.target.value})}/></Field>
           </div><div className="item-footer"><span>Ödenmiş tutarlar kalan toplama girmez.</span><Button type="button" variant="ghost" onClick={()=>{setItems(old=>old.filter(i=>i.id!==item.id));setOpen(null);}}><Trash2 size={15}/> Kalemi sil</Button></div></div>}
         </article>)}</div>
         <Button type="button" variant="ghost" className="reset" onClick={reset}><RotateCcw size={15}/> Örnek değerlere dön</Button>

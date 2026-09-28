@@ -45,15 +45,10 @@ function increasesAt(due: string, first: string): number {
   return count;
 }
 
-function nextBirthday(firstDue: string, birthday: string): string {
-  if (!/^\d{2}-\d{2}$/.test(birthday)) return "";
-  const [day,month]=birthday.split("-").map(Number);
-  const valid=new Date(Date.UTC(2000,month-1,day));
-  if (valid.getUTCMonth()!==month-1 || valid.getUTCDate()!==day) return "";
-  const dateForYear=(year:number)=>{
-    const lastDay=new Date(Date.UTC(year,month,0)).getUTCDate();
-    return `${year}-${String(month).padStart(2,"0")}-${String(Math.min(day,lastDay)).padStart(2,"0")}`;
-  };
+function nextBirthMonth(firstDue: string, birthMonth: string): string {
+  const month=Number(birthMonth);
+  if (!/^\d{2}$/.test(birthMonth) || month<1 || month>12) return "";
+  const dateForYear=(year:number)=>`${year}-${birthMonth}-01`;
   const year=Number(firstDue.slice(0,4));
   const thisYear=dateForYear(year);
   return thisYear>firstDue?thisYear:dateForYear(year+1);
@@ -67,7 +62,7 @@ export function calculate(items: CostItem[], start: string, end: string, general
     const effectiveEnd = item.lastDue && item.lastDue < end ? item.lastDue : end;
     const addPayment = (date: string) => {
       if (date < start || date > effectiveEnd || (item.paidThrough && date <= item.paidThrough)) return;
-      const firstIncrease = item.firstIncrease || (item.increaseOnBirthday ? nextBirthday(item.firstDue,birthday) : addMonths(item.firstDue, 12));
+      const firstIncrease = item.firstIncrease || (item.increaseOnBirthday ? nextBirthMonth(item.firstDue,birthday) : addMonths(item.firstDue, 12));
       const rate=item.annualRate ?? generalRate;
       const factor = Math.pow(1 + Math.max(-100, rate) / 100, increasesAt(date, firstIncrease));
       const raw = item.amount * Math.max(0, Math.min(100, item.share)) / 100 * factor;
