@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronUp, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus, RotateCcw, Save, Share2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -15,7 +15,7 @@ const birthMonthOf=(value:string|undefined)=>{
   return monthOptions.some(option=>option.value===month)?month!:"03";
 };
 type PlanData = { items: CostItem[]; start: string; end: string; generalRate: number; birthday: string; single: number; singleRate?: number; singleIncrease: string };
-type SavedPlan = { id: string; name: string; data: PlanData; createdAt: string; updatedAt: string };
+type SavedPlan = { id: string; name: string; data: PlanData; shareToken?: string|null; createdAt: string; updatedAt: string };
 function currentPlan(plan:SavedPlan):SavedPlan {
   const name=plan.name.endsWith(" · Lise bitimine kadar")?"Lise bitimine kadar":plan.name;
   const items=plan.data.items.flatMap(item=>{
@@ -31,16 +31,18 @@ function Field({label,hint,children}:{label:string;hint?:string;children:ReactNo
   return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>;
 }
 
-export default function Home({signedIn,userName,signInPath,signOutPath}:{signedIn:boolean;userName:string|null;signInPath:string;signOutPath:string}) {
-  const [items,setItems] = useState<CostItem[]>(initialItems);
-  const [start,setStart] = useState("2026-10-01");
-  const [end,setEnd] = useState("2029-06-30");
-  const [generalRate,setGeneralRate] = useState(35);
-  const [birthday,setBirthday] = useState("03");
+export default function Home({signedIn,userName,signInPath,signOutPath,sharedPlan,openPlanId}:{signedIn:boolean;userName:string|null;signInPath:string;signOutPath:string;sharedPlan?:{name:string;data:PlanData};openPlanId?:string}) {
+  const readOnly=Boolean(sharedPlan);
+  const sharedData=sharedPlan?currentPlan({id:"",name:sharedPlan.name,data:sharedPlan.data,createdAt:"",updatedAt:""}).data:null;
+  const [items,setItems] = useState<CostItem[]>(sharedData?.items??initialItems);
+  const [start,setStart] = useState(sharedData?.start??"2026-10-01");
+  const [end,setEnd] = useState(sharedData?.end??"2029-06-30");
+  const [generalRate,setGeneralRate] = useState(sharedData?.generalRate??35);
+  const [birthday,setBirthday] = useState(sharedData?.birthday??"03");
   const [open,setOpen] = useState<string|null>(null);
-  const [single,setSingle] = useState(35000);
-  const [singleRate,setSingleRate] = useState<number|undefined>(undefined);
-  const [singleIncrease,setSingleIncrease] = useState("2027-10-01");
+  const [single,setSingle] = useState(sharedData?.single??35000);
+  const [singleRate,setSingleRate] = useState<number|undefined>(sharedData?.singleRate);
+  const [singleIncrease,setSingleIncrease] = useState(sharedData?.singleIncrease??"2027-10-01");
   const [plans,setPlans] = useState<SavedPlan[]>([]);
   const [activeId,setActiveId] = useState<string|null>(null);
   const [planName,setPlanName] = useState("Lise bitimine kadar");
@@ -50,16 +52,23 @@ export default function Home({signedIn,userName,signInPath,signOutPath}:{signedI
   const [busy,setBusy] = useState(false);
   const [notice,setNotice] = useState("");
   const [listLoading,setListLoading] = useState(signedIn);
+  const [shareUrl,setShareUrl] = useState("");
+  const [sharePlanId,setSharePlanId] = useState<string|null>(null);
   const data:PlanData={items,start,end,generalRate,birthday,single,singleRate,singleIncrease};
   const dirty=Boolean(activeId && baseline && JSON.stringify(data)!==baseline);
   useEffect(()=>{
-    if (!signedIn) return;
+    if (!signedIn || readOnly) return;
     fetch("/api/plans",{cache:"no-store"}).then(async response=>{
       const body=await response.json() as {error?:string;plans:SavedPlan[]};
       if (!response.ok) throw new Error(body.error || "Kayıtlar yüklenemedi.");
-      setPlans(body.plans.map(currentPlan));
+      const normalized=body.plans.map(currentPlan);
+      setPlans(normalized);
+      if (openPlanId) {
+        const selected=normalized.find(plan=>plan.id===openPlanId);
+        if (selected) load(selected);
+      }
     }).catch(error=>setNotice(error.message)).finally(()=>setListLoading(false));
-  },[signedIn]);
+  },[signedIn,readOnly,openPlanId]);
   const payments = useMemo(()=>calculate(items,start,end,generalRate,birthday),[items,start,end,generalRate,birthday]);
   const singlePayments = useMemo(()=>calculate([{
     id:"single",name:"Tek aylık ödeme",amount:single,share:100,frequency:"monthly",monthsPerYear:12,
@@ -139,25 +148,72 @@ export default function Home({signedIn,userName,signInPath,signOutPath}:{signedI
       if (!response.ok) throw new Error(result.error||"Hesaplama silinemedi.");
       setPlans(old=>old.filter(p=>p.id!==plan.id));
       if (activeId===plan.id) {setActiveId(null);setBaseline("");setSaveAs(false);}
+      if (sharePlanId===plan.id) {setShareUrl("");setSharePlanId(null);}
       setNotice(`“${plan.name}” silindi.`);
     } catch(error) {setNotice(error instanceof Error?error.message:"Hesaplama silinemedi. Tekrar deneyin.");}
     finally {setBusy(false);}
+  }
+  async function share(plan:SavedPlan) {
+    if (plan.id===activeId && dirty) {setNotice("Paylaşmadan önce değişikliklerini kaydet.");return;}
+    setBusy(true);setNotice("");
+    try {
+      let token=plan.shareToken;
+      if (!token) {
+        const response=await fetch("/api/plans/share",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:plan.id})});
+        const result=await response.json() as {error?:string;shareToken:string};
+        if (!response.ok) throw new Error(result.error||"Bağlantı oluşturulamadı.");
+        token=result.shareToken;
+        setPlans(old=>old.map(row=>row.id===plan.id?{...row,shareToken:token}:row));
+      }
+      if (!token || !/^[0-9a-f]{64}$/.test(token)) throw new Error("Paylaşım bağlantısı geçersiz.");
+      const url=new URL(`/paylas/${token}`,window.location.origin).href;
+      setShareUrl(url);setSharePlanId(plan.id);
+      try {await navigator.clipboard.writeText(url);setNotice("Paylaşım bağlantısı kopyalandı.");}
+      catch {setNotice("Paylaşım bağlantısı hazır. Aşağıdan kopyalayabilirsin.");}
+    } catch(error) {setNotice(error instanceof Error?error.message:"Bağlantı oluşturulamadı.");}
+    finally {setBusy(false);}
+  }
+  async function revokeShare(plan:SavedPlan) {
+    if (!window.confirm(`“${plan.name}” paylaşımı kapatılsın mı? Eski bağlantı çalışmayacak.`)) return;
+    setBusy(true);setNotice("");
+    try {
+      const response=await fetch("/api/plans/share",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:plan.id})});
+      const result=await response.json() as {error?:string};
+      if (!response.ok) throw new Error(result.error||"Paylaşım kapatılamadı.");
+      setPlans(old=>old.map(row=>row.id===plan.id?{...row,shareToken:null}:row));
+      if (sharePlanId===plan.id) {setShareUrl("");setSharePlanId(null);}
+      setNotice("Paylaşım kapatıldı. Eski bağlantı artık geçersiz.");
+    } catch(error) {setNotice(error instanceof Error?error.message:"Paylaşım kapatılamadı.");}
+    finally {setBusy(false);}
+  }
+  async function copySharedPlan() {
+    if (!sharedPlan || !sharedData || !signedIn) return;
+    setBusy(true);setNotice("");
+    try {
+      const response=await fetch("/api/plans",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:`${sharedPlan.name} · Kopya`.slice(0,80),data:sharedData})});
+      const result=await response.json() as {error?:string;plan?:{id:string}};
+      if (!response.ok || !result.plan?.id) throw new Error(result.error||"Kopya oluşturulamadı.");
+      window.location.assign(`/?plan=${encodeURIComponent(result.plan.id)}`);
+    } catch(error) {setNotice(error instanceof Error?error.message:"Kopya oluşturulamadı.");setBusy(false);}
   }
   return <>
     <header className="topbar"><div className="topbar-inner"><div className="mark">∑</div><div className="identity"><strong>Gider Planı</strong><span>Çocuk giderleri ve nafaka hesaplayıcı</span></div><span className="header-user" title={userName||undefined}>{userName||"Hesaplama bu ekranda yapılır"}</span>{signedIn&&<a className="sign-out" href={signOutPath} target="_top">Çıkış yap</a>}</div></header>
     <main className="app-shell">
     <div className="workspace">
       <section className="editor">
-        <div className="intro"><p className="eyebrow">HESAPLAMA ALANI</p><h1>Ödemelerini planla</h1><p>Örnek plan Ekim 2026–Haziran 2029 dönemini kapsar. Kurs üç eğitim yılında sekizer ay sürer; tutarları ve ödeme tarihlerini değiştirebilirsin.</p></div>
-        <section className="panel plans-panel" aria-label="Kayıtlı hesaplamalar">
+        <div className="intro"><p className="eyebrow">{readOnly?"PAYLAŞILAN HESAPLAMA":"HESAPLAMA ALANI"}</p><h1>{readOnly?sharedPlan?.name:"Ödemelerini planla"}</h1><p>{readOnly?"Bu hesaplama salt okunur. Tutarları, varsayımları ve ay ay ödeme planını inceleyebilirsin.":"Örnek plan Ekim 2026–Haziran 2029 dönemini kapsar. Kurs üç eğitim yılında sekizer ay sürer; tutarları ve ödeme tarihlerini değiştirebilirsin."}</p></div>
+        {readOnly&&<section className="panel shared-copy-panel"><div><strong>Kendi hesabında düzenle</strong><p>Bu planın bağımsız bir kopyasını oluştur. Sonra değiştirip kendi paylaşım bağlantını gönderebilirsin.</p></div>{signedIn?<Button type="button" disabled={busy} onClick={copySharedPlan}>Kopyasını oluştur</Button>:<a href={signInPath} target="_top">Giriş yap ve kopyala</a>}{notice&&<p role="status" className="save-notice">{notice}</p>}</section>}
+        {!readOnly&&<section className="panel plans-panel" aria-label="Kayıtlı hesaplamalar">
           <div className="plans-heading"><div><h2>Hesaplamalarım</h2><p>{activeId?"Açık hesabı güncelle veya farklı adla kopyala.":"Bu hesabı kaydet, sonra başka bir hesaplama oluştur."}</p></div><Button type="button" variant="outline" onClick={newPlan}>Yeni hesaplama</Button></div>
           {signedIn?<>
             <div className="save-bar"><Field label="Hesaplama adı"><Input maxLength={80} value={planName} onChange={e=>setPlanName(e.target.value)} /></Field><Button type="button" disabled={busy} onClick={()=>persist(false)}><Save size={16}/>{activeId?"Kaydet":"Kaydet"}</Button><Button type="button" variant="outline" disabled={busy} onClick={()=>{setCopyName(`${planName} · Kopya`);setSaveAs(true);}}>Farklı kaydet</Button></div>
             {saveAs&&<div className="save-as"><Field label="Yeni kopyanın adı"><Input maxLength={80} value={copyName} onChange={e=>setCopyName(e.target.value)}/></Field><Button disabled={busy} type="button" onClick={()=>persist(true)}>Yeni kayıt oluştur</Button><Button type="button" variant="ghost" onClick={()=>setSaveAs(false)}>Vazgeç</Button></div>}
-            <div className="saved-list"><strong>Kayıtlı hesaplamalar {plans.length?`(${plans.length})`:""}</strong>{listLoading?<p>Yükleniyor…</p>:plans.length?<div className="saved-scroll">{plans.map(plan=><div className={`saved-item ${plan.id===activeId?"selected":""}`} key={plan.id}><span className="saved-description"><b>{plan.name}</b><small>{new Date(plan.updatedAt).toLocaleDateString("tr-TR")} · {money(sum(calculate(plan.data.items,plan.data.start,plan.data.end,plan.data.generalRate,plan.data.birthday)))}</small></span><span className="saved-actions"><Button type="button" variant="ghost" disabled={busy} onClick={()=>load(plan)}>Düzenle</Button><Button type="button" variant="ghost" disabled={busy} onClick={()=>removePlan(plan)} aria-label={`${plan.name} hesabını sil`}><Trash2 size={15}/> Sil</Button></span></div>)}</div>:<p>Henüz kayıtlı hesaplama yok.</p>}</div>
+            <div className="saved-list"><strong>Kayıtlı hesaplamalar {plans.length?`(${plans.length})`:""}</strong>{listLoading?<p>Yükleniyor…</p>:plans.length?<div className="saved-scroll">{plans.map(plan=><div className={`saved-item ${plan.id===activeId?"selected":""}`} key={plan.id}><span className="saved-description"><b>{plan.name}</b><small>{new Date(plan.updatedAt).toLocaleDateString("tr-TR")} · {money(sum(calculate(plan.data.items,plan.data.start,plan.data.end,plan.data.generalRate,plan.data.birthday)))}</small></span><span className="saved-actions"><Button type="button" variant="ghost" disabled={busy} onClick={()=>load(plan)}>Düzenle</Button><Button type="button" variant="ghost" disabled={busy} onClick={()=>share(plan)}><Share2 size={14}/> Paylaş</Button>{plan.shareToken&&<Button type="button" variant="ghost" disabled={busy} onClick={()=>revokeShare(plan)}>Bağlantıyı kapat</Button>}<Button type="button" variant="ghost" disabled={busy} onClick={()=>removePlan(plan)} aria-label={`${plan.name} hesabını sil`}><Trash2 size={15}/> Sil</Button></span></div>)}</div>:<p>Henüz kayıtlı hesaplama yok.</p>}</div>
+            {shareUrl&&<div className="share-link"><Field label="Paylaşım bağlantısı"><Input readOnly value={shareUrl} onFocus={event=>event.target.select()}/></Field><a href={shareUrl} target="_blank" rel="noopener noreferrer">Paylaşılan görünümü aç</a><small>Bağlantıya sahip herkes bu kaydın güncel hâlini görebilir. Düzenleme yetkisi verilmez.</small></div>}
           </>:<div className="sign-in-prompt"><p>Hesaplamalarını farklı oturumlarda görmek için ChatGPT hesabınla giriş yap. Giriş yapmadan hesaplama yapabilirsin.</p><a href={signInPath} target="_top">Giriş yap ve kaydet</a></div>}
           {notice&&<p className="save-notice" role="status">{notice}</p>}
-        </section>
+        </section>}
+        <fieldset disabled={readOnly} className="read-only-fields">
         <section className="panel period"><div className="panel-heading"><div className="icon">01</div><div><h2>Hesaplama dönemi</h2><p>Başlangıç ve bitiş tarihleri dahildir.</p></div></div><div className="two-fields">
           <Field label="Başlangıç tarihi"><Input type="date" value={start} onChange={e=>setStart(e.target.value)} /></Field>
           <Field label="Bitiş tarihi"><Input type="date" value={end} onChange={e=>setEnd(e.target.value)} /></Field>
@@ -165,12 +221,13 @@ export default function Home({signedIn,userName,signInPath,signOutPath}:{signedI
           <Field label="Genel yıllık artış (%)" hint="Özel oran girilmeyen tüm giderlerde ve tek ödeme karşılaştırmasında kullanılır."><Input type="number" min="-100" step="0.01" value={generalRate} onChange={e=>setGeneralRate(Number(e.target.value))}/></Field>
           <Field label="Doğum ayı" hint="Harçlık artışı bu ayın ödemesinde başlar. Varsayılan Mart ayını değiştirebilirsin."><NativeSelect className="w-full" value={birthday} onChange={e=>setBirthday(e.target.value)}>{monthOptions.map(option=><NativeSelectOption key={option.value} value={option.value}>{option.label}</NativeSelectOption>)}</NativeSelect></Field>
         </div>{start>end && <p role="alert" className="error">Bitiş tarihi başlangıçtan önce olamaz.</p>}</section>
-        <div className="list-head"><div><h2>Gider kalemleri <span className="count">{items.length}</span></h2><p>Her kalemin kendi tutarı ve ödeme takvimi var.</p></div><Button type="button" onClick={add}><Plus size={16}/> Kalem ekle</Button></div>
+        </fieldset>
+        <div className="list-head"><div><h2>Gider kalemleri <span className="count">{items.length}</span></h2><p>Her kalemin kendi tutarı ve ödeme takvimi var.</p></div>{!readOnly&&<Button type="button" onClick={add}><Plus size={16}/> Kalem ekle</Button>}</div>
         <div className="item-list">{itemRows.map(({item,rows})=><article className={"item "+(open===item.id?"expanded":"")} key={item.id}>
           <button className="item-summary" type="button" aria-expanded={open===item.id} onClick={()=>setOpen(open===item.id?null:item.id)}>
             <span className="item-icon">{item.name[0]?.toLocaleUpperCase("tr-TR")||"•"}</span><span className="item-name"><strong>{item.name||"İsimsiz kalem"}</strong><small>{item.frequency==="monthly"?`Yılda ${item.monthsPerYear} ay`:item.frequency==="yearly"?"Yıllık":item.frequency==="dates"?"Belirli tarihler":"Tek sefer"} · %{item.share} pay · {rows.length} ödeme</small></span><span className="item-money">{money(sum(rows))}</span>{open===item.id?<ChevronUp size={18}/>:<ChevronDown size={18}/>}
           </button>
-          {open===item.id && <div className="details"><div className="form-grid">
+          {open===item.id && <div className="details"><fieldset disabled={readOnly} className="read-only-fields"><div className="form-grid">
             <Field label="Kalem adı"><Input value={item.name} onChange={e=>update(item.id,{name:e.target.value})}/></Field>
             <Field label="Bir ödeme için temel tutar (TL)"><Input type="number" min="0" step="0.01" value={item.amount} onChange={e=>update(item.id,{amount:Number(e.target.value)})}/></Field>
             <Field label="Tekrar şekli"><NativeSelect className="w-full" value={item.frequency} onChange={e=>update(item.id,{frequency:e.target.value as Frequency})}><NativeSelectOption value="monthly">Aylık</NativeSelectOption><NativeSelectOption value="yearly">Yıllık</NativeSelectOption><NativeSelectOption value="dates">Belirli tarihler</NativeSelectOption><NativeSelectOption value="once">Tek sefer</NativeSelectOption></NativeSelect></Field>
@@ -182,19 +239,19 @@ export default function Home({signedIn,userName,signInPath,signOutPath}:{signedI
             <Field label="Ödenmiş son tarih" hint="Bu tarihe kadarki ödemeler hesaptan düşülür."><Input type="date" value={item.paidThrough} onChange={e=>update(item.id,{paidThrough:e.target.value})}/></Field>
             <Field label="Kaleme özel yıllık artış (%)" hint={`Boşsa genel oran (%${generalRate}) kullanılır; 0 girersen artış olmaz.`}><Input type="number" min="-100" step="0.01" placeholder={String(generalRate)} value={item.annualRate??""} onChange={e=>update(item.id,{annualRate:e.target.value===""?undefined:Number(e.target.value)})}/></Field>
             <Field label="İlk artış tarihi" hint={item.increaseOnBirthday?"Boşsa artış doğum ayının ödemesinde başlar. Tarih girersen onu kullanır.":"Boşsa ilk ödemeden 12 ay sonra başlar; her yıl tekrarlanır."}><Input type="date" value={item.firstIncrease} onChange={e=>update(item.id,{firstIncrease:e.target.value})}/></Field>
-          </div><div className="item-footer"><span>Ödenmiş tutarlar kalan toplama girmez.</span><Button type="button" variant="ghost" onClick={()=>{setItems(old=>old.filter(i=>i.id!==item.id));setOpen(null);}}><Trash2 size={15}/> Kalemi sil</Button></div></div>}
+          </div></fieldset><div className="item-footer"><span>Ödenmiş tutarlar kalan toplama girmez.</span>{!readOnly&&<Button type="button" variant="ghost" onClick={()=>{setItems(old=>old.filter(i=>i.id!==item.id));setOpen(null);}}><Trash2 size={15}/> Kalemi sil</Button>}</div></div>}
         </article>)}</div>
-        <Button type="button" variant="ghost" className="reset" onClick={reset}><RotateCcw size={15}/> Örnek değerlere dön</Button>
+        {!readOnly&&<Button type="button" variant="ghost" className="reset" onClick={reset}><RotateCcw size={15}/> Örnek değerlere dön</Button>}
       </section>
       <aside className="results"><div className="results-sticky"><p className="eyebrow">ANLIK SONUÇ</p><h2>Toplam karşılaştırma</h2><p>Seçtiğin tarihler arasındaki kalan ödemeler</p>
         <div className="total-card"><span>Kalem kalem toplam</span><strong>{money(total)}</strong><small>{monthCount} ay · {payments.length} ödeme hareketi · {items.length} gider kalemi</small></div>
         <div className="average-card"><strong>Dönem ortalamaları</strong><div><span>Aylık ortalama</span><b>{money(monthCount?total/monthCount:0)}</b></div><div><span>Yıllık ortalama</span><b>{money(monthCount?total/monthCount*12:0)}</b></div><small>{monthCount} ayın toplamından hesaplanır. Yıllık değer 12 aya ölçeklenmiş ortalamadır.</small></div>
         {years.length>0&&<div className="year-card"><strong>Takvim yılına göre</strong>{years.map(row=><div className="year-row" key={row.year}><span><b>{row.year}</b><small>{row.months} ay · aylık ort. {money(row.total/row.months)}</small></span><strong>{money(row.total)}</strong></div>)}<small>Her yılın seçilen tarihler arasındaki gerçek ödeme toplamı. Ödenmiş tutarlar dahil değildir.</small></div>}
-        <div className="single-card"><div className="single-head"><span>Tek aylık ödeme</span><strong>{money(singleTotal)}</strong></div><div className="single-fields">
+        <div className="single-card"><div className="single-head"><span>Tek aylık ödeme</span><strong>{money(singleTotal)}</strong></div><fieldset disabled={readOnly} className="read-only-fields"><div className="single-fields">
           <Field label="Başlangıç tutarı (TL)"><Input type="number" min="0" value={single} onChange={e=>setSingle(Number(e.target.value))}/></Field>
           <Field label="Özel yıllık artış (%)" hint={`Boşsa genel oran (%${generalRate}) kullanılır.`}><Input type="number" min="-100" placeholder={String(generalRate)} value={singleRate??""} onChange={e=>setSingleRate(e.target.value===""?undefined:Number(e.target.value))}/></Field>
           <Field label="İlk artış" hint="Boşsa başlangıçtan 12 ay sonra."><Input type="date" value={singleIncrease} onChange={e=>setSingleIncrease(e.target.value)}/></Field>
-        </div></div>
+        </div></fieldset></div>
         <div className={"difference "+(difference>0?"higher":difference<0?"lower":"")}><span>{difference>0?"Tek ödeme daha yüksek":difference<0?"Tek ödeme daha düşük":"İki toplam eşit"}</span><strong>{money(Math.abs(difference))}</strong></div>
         <p className="note">Tek aylık ödeme diğer kalemlerin yerine geçtiği varsayımıyla karşılaştırılır. 18 yaş sonrası destek yalnızca bütçe varsayımıdır; hukuki bir ödeme kararı değildir. Kuruşlar toplamda yuvarlanır.</p>
       </div></aside>

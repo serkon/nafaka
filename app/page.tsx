@@ -3,7 +3,8 @@ import Calculator from "./calculator-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ plan?: string }> }) {
   const user = await getChatGPTUser();
-  return <Calculator signedIn={Boolean(user)} userName={user?.displayName ?? null} signInPath={chatGPTSignInPath("/")} signOutPath={chatGPTSignOutPath("/")} />;
+  const { plan } = await searchParams;
+  return <Calculator signedIn={Boolean(user)} userName={user?.displayName ?? null} signInPath={chatGPTSignInPath("/")} signOutPath={chatGPTSignOutPath("/")} openPlanId={plan} />;
 }

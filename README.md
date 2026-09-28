@@ -4,6 +4,8 @@ React tabanlı hesaplayıcı, kaydedilen planları kullanıcı bazında Cloudfla
 
 Giriş ChatGPT hesabıyla yapılır. ChatGPT girişinde sunulan Google seçeneği kullanılabilir; uygulama kendi Google OAuth istemcisini veya ayrı bir Google hesabı oluşturma akışını barındırmaz. Kayıtlı planlara erişim sunucuda oturumdaki kullanıcı kimliğiyle sınırlandırılır.
 
+Kaydedilen bir plan rastgele oluşturulan paylaşım bağlantısıyla salt okunur açılabilir. Bağlantıya sahip herkes planın güncel hâlini görebilir; plan sahibi paylaşımı kapatabilir. Alıcı ChatGPT hesabına giriş yaparak bağımsız bir kopya oluşturabilir, kendi hesabında düzenleyebilir ve kendi bağlantısıyla yeniden paylaşabilir.
+
 `prisma/schema.prisma` mevcut `saved_plans` tablosunun Prisma modelidir. Şema değişiklikleri için `db/schema.ts` ve `drizzle/` migrasyonları tek kaynak olmaya devam eder; `npm run build` Prisma Client'ı yeniden üretir.
 
 A clean full-stack starter running on [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and Drizzle support.

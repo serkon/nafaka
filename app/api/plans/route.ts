@@ -39,7 +39,7 @@ export async function GET() {
     const ctx = await context();
     if (!ctx) return unauthorized();
     const result = await ctx.prisma.savedPlan.findMany({ where: { ownerId: ctx.ownerId }, orderBy: { updatedAt: "desc" } });
-    return Response.json({ plans: result.map(row => ({ id: row.id, name: row.name, data: JSON.parse(row.data), createdAt: row.createdAt, updatedAt: row.updatedAt })) });
+    return Response.json({ plans: result.map(row => ({ id: row.id, name: row.name, data: JSON.parse(row.data), shareToken: row.shareToken, createdAt: row.createdAt, updatedAt: row.updatedAt })) });
   } catch (error) {
     console.error("Plan listesi okunamadı", error);
     return failed();
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     if (!input) return Response.json({ error: "Ad ve hesaplama bilgilerini kontrol et." }, { status: 400 });
     const id = crypto.randomUUID(), now = new Date().toISOString();
     await ctx.prisma.savedPlan.create({ data: { id, ownerId: ctx.ownerId, name: input.name, data: JSON.stringify(input.data), createdAt: now, updatedAt: now } });
-    return Response.json({ plan: { id, name: input.name, data: input.data, createdAt: now, updatedAt: now } }, { status: 201 });
+    return Response.json({ plan: { id, name: input.name, data: input.data, shareToken: null, createdAt: now, updatedAt: now } }, { status: 201 });
   } catch (error) {
     console.error("Plan kaydedilemedi", error);
     return failed();
@@ -79,7 +79,8 @@ export async function PUT(request: Request) {
     const now = new Date().toISOString();
     const update = await ctx.prisma.savedPlan.updateMany({ where: { id, ownerId: ctx.ownerId }, data: { name: input.name, data: JSON.stringify(input.data), updatedAt: now } });
     if (!update.count) return Response.json({ error: "Kayıt bulunamadı." }, { status: 404 });
-    return Response.json({ plan: { id, name: input.name, data: input.data, updatedAt: now } });
+    const saved = await ctx.prisma.savedPlan.findUnique({ where: { id } });
+    return Response.json({ plan: { id, name: input.name, data: input.data, shareToken: saved?.shareToken ?? null, updatedAt: now } });
   } catch (error) {
     console.error("Plan güncellenemedi", error);
     return failed();

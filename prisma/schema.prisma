@@ -14,6 +14,7 @@ model SavedPlan {
   ownerId   String @map("owner_id")
   name      String
   data      String
+  shareToken String? @unique @map("share_token")
   createdAt String @map("created_at")
   updatedAt String @map("updated_at")
 
